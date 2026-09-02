@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transformer 控制器 · 倒立摆实时仿真</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070b11;--panel:#0e151f;--panel-2:#111a26;--panel-3:#162130;
+    --line:#1d2b3d;--line-soft:#182536;--text:#d7e4f2;--muted:#6d8199;--dim:#43566d;
+    --green:#2ee6a8;--green-dim:#1fae7f;--amber:#ffb454;--red:#ff5d6c;--blue:#57a8ff;--purple:#b78bff;
+    --mono:'JetBrains Mono','Consolas','Courier New',monospace;
+    --disp:'Chakra Petch','Microsoft YaHei','PingFang SC',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--text);font-family:var(--disp)}
+  body{min-height:100vh;background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);background-size:32px 32px;position:relative}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:999;background:repeating-linear-gradient(0deg,rgba(255,255,255,.014) 0 1px,transparent 1px 3px);mix-blend-mode:overlay}
+  .app{max-width:1420px;margin:0 auto;padding:20px 22px 60px}
+
+  header{display:flex;align-items:center;gap:16px;padding:14px 20px;border:1px solid var(--line);background:linear-gradient(180deg,var(--panel-2),var(--panel));border-radius:10px;margin-bottom:16px;position:relative;overflow:hidden}
+  header::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--purple);box-shadow:0 0 16px var(--purple)}
+  .logo h1{font-size:20px;font-weight:700;letter-spacing:.5px;color:#fff}
+  .logo .sub{font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:1px}
+  .status{display:flex;align-items:center;gap:9px;margin-left:auto;padding:7px 14px;border:1px solid var(--line);border-radius:999px;background:var(--panel-3)}
+  .status .dot{width:11px;height:11px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);transition:.2s}
+  .status[data-state="warn"] .dot{background:var(--amber);box-shadow:0 0 10px var(--amber)}
+  .status[data-state="fail"] .dot{background:var(--red);box-shadow:0 0 10px var(--red)}
+  .status .lbl{font-size:13px;font-family:var(--mono);letter-spacing:1px}
+  .btn{font-family:var(--disp);font-size:13px;font-weight:600;letter-spacing:.5px;cursor:pointer;padding:9px 16px;border-radius:7px;border:1px solid var(--line);color:var(--text);background:var(--panel-3);transition:.15s}
+  .btn:hover{border-color:var(--purple);color:var(--purple)}
+  .btn.primary{background:var(--purple);color:#160a2a;border-color:var(--purple)}
+  .btn.primary:hover{filter:brightness(1.12);color:#160a2a}
+  .btn.danger:hover{border-color:var(--red);color:var(--red)}
+  .btn.active{border-color:var(--green);color:var(--green)}
+
+  main{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;margin-bottom:16px}
+  .card{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:16px;position:relative}
+  .card .card-h{display:flex;align-items:center;gap:10px;margin-bottom:14px;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
+  .card .card-h::before{content:"";width:8px;height:8px;background:var(--purple);transform:rotate(45deg)}
+  .card .card-h .tag{font-family:var(--mono)}
+
+  #simCanvas{width:100%;height:330px;display:block;background:radial-gradient(ellipse at 50% 0%,rgba(183,139,255,.05),transparent 60%),var(--panel-2);border:1px solid var(--line);border-radius:8px}
+  .controls{display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px;margin-top:16px}
+  .ctl{display:flex;flex-direction:column;gap:6px}
+  .ctl label{font-size:12px;color:var(--muted);display:flex;justify-content:space-between}
+  .ctl label b{color:var(--text);font-family:var(--mono);font-weight:500}
+  input[type=range]{-webkit-appearance:none;height:4px;border-radius:2px;background:var(--line);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:var(--purple);cursor:pointer;box-shadow:0 0 8px var(--purple)}
+  .btn-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center}
+
+  .reads{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+  .read{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .read .k{font-size:11px;color:var(--muted);letter-spacing:1px;margin-bottom:4px}
+  .read .v{font-family:var(--mono);font-size:21px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
+  .read .v small{font-size:12px;color:var(--dim);font-weight:400}
+  .read .u{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px}
+  .read.accent .v{color:var(--purple)}
+
+  .attn-box{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px}
+  .attn-box .t{font-size:11px;color:var(--muted);letter-spacing:1px;margin-bottom:8px}
+  #attnCanvas{width:100%;display:block}
+  .attn-legend{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;color:var(--dim);margin-top:6px}
+  .attn-legend .grad{width:120px;height:8px;border-radius:4px;background:linear-gradient(90deg,#0e151f,#2ee6a8)}
+
+  .seq-box{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:14px}
+  .seq-box .t{font-size:11px;color:var(--muted);letter-spacing:1px;margin-bottom:6px}
+  .seq-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px}
+  .seq-table th,.seq-table td{padding:3px 6px;text-align:right;border-bottom:1px solid var(--line-soft)}
+  .seq-table th{color:var(--dim);font-weight:500}
+  .seq-table td:first-child{color:var(--dim)}
+  .seq-table tr:last-child td{color:var(--green);font-weight:700}
+
+  .step{background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--purple);border-radius:8px;padding:12px;margin-bottom:14px;font-family:var(--mono);font-size:12.5px;line-height:1.75}
+  .step .s-h{color:var(--purple);font-weight:700;letter-spacing:1px;margin-bottom:6px}
+  .step .dim{color:var(--dim)} .step .val{color:#fff} .step .op{color:var(--amber)}
+
+  .docs{border:1px solid var(--line);background:var(--panel);border-radius:10px;overflow:hidden}
+  .tabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel-2)}
+  .tab{padding:14px 22px;font-size:14px;font-weight:600;letter-spacing:1px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:.15s}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--purple);border-bottom-color:var(--purple)}
+  .tab-body{padding:22px;display:none}
+  .tab-body.active{display:block}
+  .tab-body h3{font-size:16px;margin:20px 0 10px;color:#fff}
+  .tab-body h3:first-child{margin-top:0}
+  .tab-body p{font-size:14px;line-height:1.9;color:var(--text)}
+  .tab-body .hl{color:var(--purple)} .tab-body .am{color:var(--amber)} .tab-body .gr{color:var(--green)}
+  .eq{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:10px 0;font-family:var(--mono);font-size:13px;color:#cfe8ff;line-height:2;overflow-x:auto}
+  .eq .c{color:var(--dim)}
+  pre.pseudo{background:#0a1119;border:1px solid var(--line);border-radius:8px;padding:16px;margin:12px 0;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#c8e6d5}
+  pre.pseudo .kw{color:var(--purple)} pre.pseudo .fn{color:var(--blue)} pre.pseudo .cm{color:var(--dim)} pre.pseudo .op{color:var(--amber)}
+  .param-tbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px;margin-top:8px}
+  .param-tbl th,.param-tbl td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--line-soft)}
+  .param-tbl th{color:var(--muted);font-weight:500}
+  .param-tbl td:last-child{color:var(--purple)}
+  .flowbox{display:flex;justify-content:center;padding:10px 0;overflow-x:auto}
+  @media (max-width:1000px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">
+      <h1>Transformer 控制器 · 倒立摆</h1>
+      <div class="sub">CART-POLE · TRANSFORMER POLICY · BEHAVIOR CLONING · REAL-TIME</div>
+    </div>
+    <div class="status" id="status" data-state="ok"><span class="dot"></span><span class="lbl" id="statusLbl">稳定运行</span></div>
+    <button class="btn primary" id="btnRun">暂停</button>
+    <button class="btn" id="btnStep">单步</button>
+    <button class="btn danger" id="btnReset">复位</button>
+    <button class="btn" id="btnPerturb">施加扰动</button>
+  </header>
+
+  <main>
+    <!-- 左侧：动画 + 控制 -->
+    <section class="card">
+      <div class="card-h">仿真动画 <span class="tag">CONTROL LOOP</span></div>
+      <canvas id="simCanvas" width="820" height="330"></canvas>
+      <div class="controls">
+        <div class="ctl"><label>初始角度 θ₀ <b id="vTh0">0.20 rad</b></label><input type="range" id="th0" min="0" max="0.4" step="0.01" value="0.20"></div>
+        <div class="ctl"><label>仿真速度 <b id="vSpeed">1×</b></label><input type="range" id="speed" min="1" max="4" step="1" value="1"></div>
+        <div class="ctl"><label>扰动强度 <b id="vPert">1.2 rad/s</b></label><input type="range" id="pert" min="0.3" max="3" step="0.1" value="1.2"></div>
+        <div class="ctl"><label>控制器 <b id="vCtrl">Transformer</b></label><input type="range" id="ctrl" min="0" max="1" step="1" value="0"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn active" id="btnCtrlT">Transformer 控制</button>
+        <button class="btn" id="btnCtrlL">LQR 控制（对比）</button>
+        <span style="font-size:12px;color:var(--dim);font-family:var(--mono);align-self:center">M=1.0 · m=0.1 · l=0.5 · g=9.81 · 序列长度 T=8</span>
+      </div>
+    </section>
+
+    <!-- 右侧：读数 + 注意力 + 推理 -->
+    <section class="card">
+      <div class="card-h">实时推理 <span class="tag">TRANSFORMER INFERENCE</span></div>
+      <div class="reads">
+        <div class="read"><div class="k">角度 θ</div><div class="v" id="rTh">0.00<small> rad</small></div><div class="u" id="rThDeg">0.0°</div></div>
+        <div class="read accent"><div class="k">控制力 u</div><div class="v" id="rU">0.00<small> N</small></div><div class="u" id="rUCtrl">Transformer</div></div>
+        <div class="read"><div class="k">小车位置 x</div><div class="v" id="rX">0.00<small> m</small></div><div class="u">ẋ = <span id="rXd">0.00</span> m/s</div></div>
+        <div class="read"><div class="k">角速度 θ̇</div><div class="v" id="rThd">0.00<small> rad/s</small></div><div class="u">t = <span id="rT">0.00</span> s</div></div>
+      </div>
+
+      <div class="attn-box">
+        <div class="t">多头自注意力权重 · 4 头 × 8 步（query 行 → key 列）</div>
+        <canvas id="attnCanvas" width="460" height="240"></canvas>
+        <div class="attn-legend"><span>低</span><span class="grad"></span><span>高</span><span style="margin-left:auto">最后一行 = 当前决策对历史状态的关注</span></div>
+      </div>
+
+      <div class="seq-box">
+        <div class="t">输入序列 · 最近 8 步状态 [x, ẋ, θ, θ̇]</div>
+        <table class="seq-table">
+          <thead><tr><th>步</th><th>x</th><th>ẋ</th><th>θ</th><th>θ̇</th></tr></thead>
+          <tbody id="seqBody"></tbody>
+        </table>
+      </div>
+
+      <div class="step" id="stepPanel">
+        <div class="s-h">▸ 前向计算链</div>
+        <div id="stepBody">等待仿真…</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 文档区 -->
+  <section class="docs">
+    <div class="tabs">
+      <div class="tab active" data-tab="principle">原理</div>
+      <div class="tab" data-tab="pseudo">伪代码</div>
+      <div class="tab" data-tab="flow">流程图</div>
+    </div>
+
+    <div class="tab-body active" id="tab-principle">
+      <h3>1. 为什么用 Transformer 控制倒立摆？</h3>
+      <p>传统做法（如 LQR）需要精确的物理建模与线性化，控制器是一个<span class="am">固定增益矩阵</span> u = −K·z。而 Transformer 把控制问题重新表述为<span class="hl">序列到动作的映射</span>：输入最近 T 步的状态序列，直接输出控制力。它的核心优势在于<span class="hl">多头自注意力</span>——控制器能自动学会"哪些历史状态对当前决策更重要"，无需人工设计特征。</p>
+
+      <h3>2. 训练方法：模仿学习（Behavior Cloning）</h3>
+      <p>用一个已成熟的 <span class="gr">LQR 控制器作为"专家教师"</span>，让它在各种初始状态、随机扰动下控制倒立摆，收集 (状态序列 → 控制力) 样本，再用<span class="am">均方误差监督学习</span>训练 Transformer 逼近专家策略：</p>
+      <div class="eq">Loss = 𝔼[ ( u_Transformer(X) − u_LQR(z_t) )² ]<br><span class="c">// X = 最近 T 步状态序列，z_t = 当前状态，u_LQR = 专家控制力</span></div>
+
+      <h3>3. 网络结构</h3>
+      <div class="eq">输入 X: (T=8, 4) 状态序列<br>
+        ↓ <span class="c">线性嵌入 4→32 + 正弦位置编码</span><br>
+        多头自注意力 (4 头, d_k=8) + 残差 + LayerNorm<br>
+        ↓<br>
+        前馈网络 FFN (32→64→32) + 残差 + LayerNorm<br>
+        ↓ <span class="c">取最后一个位置的输出</span><br>
+        线性输出头 (32→1) → 控制力 u</div>
+
+      <h3>4. 多头自注意力</h3>
+      <p>每个头独立地把状态序列投影到 Query/Key/Value，计算注意力分数并加权聚合。不同头关注不同模式（位置、角度、速度等）。注意力权重会实时可视化在上方热力图中。</p>
+      <div class="eq">Attention(Q,K,V) = softmax( Q·Kᵀ / √d_k ) · V</div>
+
+      <h3>5. 训练参数</h3>
+      <table class="param-tbl">
+        <tr><th>项</th><th>取值</th></tr>
+        <tr><td>网络规模</td><td>d_model=32 · 4 头 · FFN=64 · 1 层</td></tr>
+        <tr><td>序列长度 T</td><td>8 步（0.08 s 历史）</td></tr>
+        <tr><td>训练数据</td><td>约 58,000 样本（LQR 专家 + 扰动）</td></tr>
+        <tr><td>损失 / 优化器</td><td>MSE / Adam (lr=2e-3)</td></tr>
+        <tr><td>训练轮数</td><td>60 epoch</td></tr>
+      </table>
+    </div>
+
+    <div class="tab-body" id="tab-pseudo">
+      <h3>算法 1 · Transformer 前向推理（每步控制）</h3>
+<pre class="pseudo"><span class="kw">function</span> <span class="fn">transformer_control</span>(X, params):
+    <span class="cm">// X: (T, 4) 状态序列</span>
+    H <span class="op">←</span> X @ We + be            <span class="cm">// 线性嵌入</span>
+    H <span class="op">←</span> H + PE                 <span class="cm">// 正弦位置编码</span>
+    Q, K, V <span class="op">←</span> H @ W{q,k,v} + b    <span class="cm">// 投影</span>
+    <span class="kw">for</span> each head h:
+        scores_h <span class="op">←</span> Q_h @ K_hᵀ / √d_k
+        attn_h   <span class="op">←</span> softmax(scores_h)
+        ctx_h    <span class="op">←</span> attn_h @ V_h
+    ctx <span class="op">←</span> concat(ctx_h) @ Wo + bo
+    H <span class="op">←</span> LayerNorm(H + ctx)     <span class="cm">// 残差</span>
+    H <span class="op">←</span> LayerNorm(H + ReLU(H@W1+b1)@W2+b2)  <span class="cm">// FFN</span>
+    u <span class="op">←</span> H[T-1] @ Wo_final + b_final   <span class="cm">// 取末位置输出</span>
+    <span class="kw">return</span> u</pre>
+
+      <h3>算法 2 · 训练（模仿学习）</h3>
+<pre class="pseudo"><span class="cm">// 数据收集：LQR 专家控制 + 随机扰动</span>
+D <span class="op">←</span> ∅
+<span class="kw">for</span> episode <span class="kw">in</span> 1..300:
+    z <span class="op">←</span> 随机初始状态
+    <span class="kw">for</span> step <span class="kw">in</span> 1..200:
+        u <span class="op">←</span> lqr_u(z) + 扰动
+        z <span class="op">←</span> RK4(z, u, dt)
+        D <span class="op">←</span> D ∪ {(最近T步状态, lqr_u(z))}
+
+<span class="cm">// 监督训练</span>
+<span class="kw">for</span> epoch <span class="kw">in</span> 1..60:
+    <span class="kw">for</span> batch <span class="kw">in</span> D:
+        loss <span class="op">←</span> mean( (transformer_control(X) − y)² )
+        params <span class="op">←</span> Adam(loss, params)</pre>
+
+      <h3>算法 3 · 闭环控制循环</h3>
+<pre class="pseudo"><span class="kw">loop</span> <span class="kw">every</span> dt = 0.01s:
+    X <span class="op">←</span> 最近 8 步状态序列
+    u <span class="op">←</span> transformer_control(X, params)   <span class="cm">// 或 lqr_u(z) 对比</span>
+    z <span class="op">←</span> RK4(z, u, dt)                     <span class="cm">// 非线性动力学积分</span>
+    <span class="kw">if</span> |θ| &gt; 45° <span class="kw">then</span> 失稳复位</pre>
+    </div>
+
+    <div class="tab-body" id="tab-flow">
+      <h3>训练流程</h3>
+      <div class="flowbox">
+        <svg width="900" height="120" viewBox="0 0 900 120">
+          <defs><marker id="m" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b78bff"/></marker></defs>
+          <g font-family="JetBrains Mono" font-size="12.5" text-anchor="middle">
+            <rect x="10" y="40" width="150" height="50" rx="8" fill="#162130" stroke="#2ee6a8" stroke-width="1.5"/>
+            <text x="85" y="62" fill="#2ee6a8" font-weight="700">LQR 专家</text><text x="85" y="78" fill="#8aa4c0" font-size="10.5">生成控制轨迹</text>
+            <rect x="195" y="40" width="150" height="50" rx="8" fill="#162130" stroke="#2ee6a8" stroke-width="1.5"/>
+            <text x="270" y="62" fill="#2ee6a8" font-weight="700">数据收集</text><text x="270" y="78" fill="#8aa4c0" font-size="10.5">状态序列→动作</text>
+            <rect x="380" y="40" width="150" height="50" rx="8" fill="#162130" stroke="#b78bff" stroke-width="1.5"/>
+            <text x="455" y="62" fill="#b78bff" font-weight="700">监督训练</text><text x="455" y="78" fill="#8aa4c0" font-size="10.5">MSE + Adam</text>
+            <rect x="565" y="40" width="150" height="50" rx="8" fill="#162130" stroke="#b78bff" stroke-width="1.5"/>
+            <text x="640" y="62" fill="#b78bff" font-weight="700">Transformer</text><text x="640" y="78" fill="#8aa4c0" font-size="10.5">权重导出</text>
+            <rect x="750" y="40" width="140" height="50" rx="8" fill="#162130" stroke="#57a8ff" stroke-width="1.5"/>
+            <text x="820" y="62" fill="#57a8ff" font-weight="700">网页部署</text><text x="820" y="78" fill="#8aa4c0" font-size="10.5">实时推理</text>
+          </g>
+          <g stroke="#b78bff" stroke-width="2" fill="none" marker-end="url(#m)">
+            <line x1="160" y1="65" x2="193" y2="65"/><line x1="345" y1="65" x2="378" y2="65"/>
+            <line x1="530" y1="65" x2="563" y2="65"/><line x1="715" y1="65" x2="748" y2="65"/>
+          </g>
+        </svg>
+      </div>
+      <h3>推理闭环流程</h3>
+      <div class="flowbox">
+        <svg width="920" height="150" viewBox="0 0 920 150">
+          <g font-family="JetBrains Mono" font-size="12.5" text-anchor="middle">
+            <rect x="20" y="50" width="160" height="56" rx="8" fill="#162130" stroke="#57a8ff" stroke-width="1.5"/>
+            <text x="100" y="74" fill="#57a8ff" font-weight="700">状态序列 X</text><text x="100" y="92" fill="#8aa4c0" font-size="10.5">最近8步 [x,ẋ,θ,θ̇]</text>
+            <rect x="230" y="50" width="160" height="56" rx="8" fill="#162130" stroke="#b78bff" stroke-width="1.5"/>
+            <text x="310" y="70" fill="#b78bff" font-weight="700">Transformer</text><text x="310" y="86" fill="#8aa4c0" font-size="10.5">注意力 + FFN</text>
+            <rect x="440" y="50" width="160" height="56" rx="8" fill="#162130" stroke="#ffb454" stroke-width="1.5"/>
+            <text x="520" y="74" fill="#ffb454" font-weight="700">控制力 u</text><text x="520" y="92" fill="#8aa4c0" font-size="10.5">执行器 F=u</text>
+            <rect x="650" y="50" width="160" height="56" rx="8" fill="#162130" stroke="#ffb454" stroke-width="1.5"/>
+            <text x="730" y="70" fill="#ffb454" font-weight="700">倒立摆动力学</text><text x="730" y="86" fill="#8aa4c0" font-size="10.5">非线性方程</text>
+            <rect x="650" y="120" width="160" height="24" rx="6" fill="#162130" stroke="#ff5d6c" stroke-width="1.5"/>
+            <text x="730" y="136" fill="#ff5d6c" font-size="10.5">RK4 积分更新 z</text>
+          </g>
+          <g stroke="#b78bff" stroke-width="2" fill="none" marker-end="url(#m)">
+            <line x1="180" y1="78" x2="228" y2="78"/><line x1="390" y1="78" x2="438" y2="78"/><line x1="600" y1="78" x2="648" y2="78"/>
+            <line x1="730" y1="106" x2="730" y2="118"/>
+          </g>
+          <path d="M 650 132 L 100 132 L 100 108" stroke="#ff5d6c" stroke-width="2" fill="none" stroke-dasharray="6 4" marker-end="url(#m)"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* =====================================================================
+ * Transformer 控制器 · 倒立摆实时仿真
+ * ===================================================================== */
+
+// ---------- 模型权重（由训练脚本注入） ----------
+const MODEL = __WEIGHTS_JSON__;
+
+const cfg = MODEL.cfg;
+const W = MODEL.w;
+const T = cfg.T;          // 序列长度 8
+const d_model = cfg.d_model;
+const num_heads = cfg.num_heads;
+const d_k = d_model / num_heads;
+
+// 把 Wo_final (32×1) 展平成 (32,)
+W.Wo_final_flat = W.Wo_final.map(r => r[0]);
+
+// ---------- 正弦位置编码（与训练脚本一致：乘以） ----------
+function positionalEncoding(Tlen, d){
+  const pe = [];
+  for(let t=0; t<Tlen; t++){
+    const row = new Array(d).fill(0);
+    for(let i=0; i<d; i+=2){
+      const div = Math.pow(10000, i/d);
+      row[i]   = Math.sin(t * div);
+      row[i+1] = Math.cos(t * div);
+    }
+    pe.push(row);
+  }
+  return pe;
+}
+const PE = positionalEncoding(T, d_model);
+
+// ---------- 矩阵工具 ----------
+function matMul(A,B){const m=A.length,n=B.length,p=B[0].length;const C=Array.from({length:m},()=>new Array(p).fill(0));for(let i=0;i<m;i++)for(let j=0;j<p;j++)for(let k=0;k<n;k++)C[i][j]+=A[i][k]*B[k][j];return C;}
+function matT(A){const m=A.length,n=A[0].length;return Array.from({length:n},(_,i)=>Array.from({length:m},(_,j)=>A[j][i]));}
+function matAdd(A,B){return A.map((r,i)=>r.map((v,j)=>v+B[i][j]));}
+function addBias(A,b){return A.map(r=>r.map((v,j)=>v+b[j]));}
+function matScale(A,s){return A.map(r=>r.map(v=>v*s));}
+function dot(a,b){return a.reduce((s,v,i)=>s+v*b[i],0);}
+function softmaxRows(M){return M.map(row=>{const m=Math.max(...row);const e=row.map(v=>Math.exp(v-m));const s=e.reduce((a,b)=>a+b,0);return e.map(v=>v/s);});}
+function layerNorm(H,gamma,beta,eps){return H.map(row=>{const mean=row.reduce((s,v)=>s+v,0)/row.length;const variance=row.reduce((s,v)=>s+(v-mean)**2,0)/row.length;const std=Math.sqrt(variance+eps);return row.map((v,j)=>gamma[j]*(v-mean)/std+beta[j]);});}
+function splitHeads(M,h,dk){const Tlen=M.length;const heads=[];for(let hi=0;hi<h;hi++){const Hh=[];for(let t=0;t<Tlen;t++)Hh.push(M[t].slice(hi*dk,hi*dk+dk));heads.push(Hh);}return heads;}
+function concatHeads(heads,Tlen){const h=heads.length,dk=heads[0][0].length;const out=[];for(let t=0;t<Tlen;t++){const row=[];for(let hi=0;hi<h;hi++)row.push(...heads[hi][t]);out.push(row);}return out;}
+
+// ---------- Transformer 前向（单样本推理） ----------
+function transformerForward(X){
+  let H = addBias(matMul(X, W.We), W.be);
+  H = matAdd(H, PE);
+  const Q = addBias(matMul(H, W.Wq), W.bq);
+  const K = addBias(matMul(H, W.Wk), W.bk);
+  const V = addBias(matMul(H, W.Wv), W.bv);
+  const Qh = splitHeads(Q, num_heads, d_k);
+  const Kh = splitHeads(K, num_heads, d_k);
+  const Vh = splitHeads(V, num_heads, d_k);
+  const attnList = [], ctxHeads = [];
+  for(let hi=0; hi<num_heads; hi++){
+    const scores = matScale(matMul(Qh[hi], matT(Kh[hi])), 1/Math.sqrt(d_k));
+    const attn = softmaxRows(scores);
+    attnList.push(attn);
+    ctxHeads.push(matMul(attn, Vh[hi]));
+  }
+  const ctx = concatHeads(ctxHeads, T);
+  const out = addBias(matMul(ctx, W.Wo), W.bo);
+  const h1 = layerNorm(matAdd(H, out), W.g1, W.b1ln, cfg.eps);
+  const f1 = addBias(matMul(h1, W.W1), W.b1);
+  const a = f1.map(r=>r.map(v=>Math.max(0,v)));
+  const f2 = addBias(matMul(a, W.W2), W.b2);
+  const h2 = layerNorm(matAdd(h1, f2), W.g2, W.b2ln, cfg.eps);
+  const last = h2[T-1];
+  const u = dot(last, W.Wo_final_flat) + W.b_final[0];
+  return {u, attn: attnList};
+}
+
+// ---------- 物理 + LQR ----------
+const G=9.81, M=1.0, L=0.5, m=0.1, dt=0.01;
+const K_LQR = [-2.954, -4.735, -46.339, -9.163];  // 离线求解的 LQR 增益
+function lqrControl(z){return -(K_LQR[0]*z[0]+K_LQR[1]*z[1]+K_LQR[2]*z[2]+K_LQR[3]*z[3]);}
+function derivatives(z,u){const [x,xd,th,thd]=z;const s=Math.sin(th),c=Math.cos(th);const denom=M+m;const thdd=(G*s-c*(u+m*L*thd*thd*s)/denom)/(L*(1-m*c*c/denom));const xdd=(u+m*L*(thd*thd*s-thdd*c))/denom;return [xd,xdd,thd,thdd];}
+function vecAdd(a,b){return a.map((v,i)=>v+b[i]);}
+function vecScale(a,s){return a.map(v=>v*s);}
+function rk4(z,u,dt){const k1=derivatives(z,u);const k2=derivatives(vecAdd(z,vecScale(k1,dt/2)),u);const k3=derivatives(vecAdd(z,vecScale(k2,dt/2)),u);const k4=derivatives(vecAdd(z,vecScale(k3,dt)),u);return z.map((v,i)=>v+(k1[i]+2*k2[i]+2*k3[i]+k4[i])*dt/6);}
+
+// ---------- 状态 ----------
+let z=[0,0,0.2,0];
+let useTransformer=true;
+let running=true, failed=false, stepCount=0, simTime=0;
+let buf=[];   // 长度 T 的状态缓冲区
+let lastAttn=null, lastU=0;
+
+const THETA_LIMIT=Math.PI/4, X_LIMIT=5;
+
+function resetBuf(){
+  buf=[];
+  for(let i=0;i<T;i++) buf.push(z.slice());
+}
+function pushBuf(){
+  buf.push(z.slice());
+  if(buf.length>T) buf.shift();
+}
+function inputSeq(){
+  // 返回 T×4 序列
+  return buf.map(s=>[s[0],s[1],s[2],s[3]]);
+}
+
+// ---------- 单步 ----------
+function step(){
+  const X = inputSeq();
+  let u, attn=null;
+  if(useTransformer){
+    const r = transformerForward(X);
+    u = r.u; attn = r.attn;
+  } else {
+    u = lqrControl(z);
+  }
+  lastU = u; lastAttn = attn;
+  z = rk4(z, u, dt);
+  pushBuf();
+  stepCount++; simTime += dt;
+  if(Math.abs(z[2])>THETA_LIMIT || Math.abs(z[0])>X_LIMIT){
+    failed=true; running=false;
+    document.getElementById('btnRun').textContent='运行';
+  }
+  renderReads(u);
+  renderStep(X, u);
+  if(attn) drawAttention(attn);
+  renderSeq();
+  return u;
+}
+
+// ---------- 读数 ----------
+function renderReads(u){
+  document.getElementById('rTh').innerHTML=z[2].toFixed(3)+'<small> rad</small>';
+  document.getElementById('rThDeg').textContent=(z[2]*180/Math.PI).toFixed(1)+'°';
+  document.getElementById('rU').innerHTML=u.toFixed(3)+'<small> N</small>';
+  document.getElementById('rUCtrl').textContent=useTransformer?'Transformer 输出':'LQR 输出';
+  document.getElementById('rX').innerHTML=z[0].toFixed(3)+'<small> m</small>';
+  document.getElementById('rXd').textContent=z[1].toFixed(3);
+  document.getElementById('rThd').innerHTML=z[3].toFixed(3)+'<small> rad/s</small>';
+  document.getElementById('rT').textContent=simTime.toFixed(2);
+  const st=document.getElementById('status'), lbl=document.getElementById('statusLbl');
+  if(failed){st.dataset.state='fail';lbl.textContent='已失稳（杆倒）';}
+  else if(Math.abs(z[2])>0.35){st.dataset.state='warn';lbl.textContent='接近失稳';}
+  else{st.dataset.state='ok';lbl.textContent='稳定运行';}
+}
+
+function renderSeq(){
+  const tb=document.getElementById('seqBody');
+  let html='';
+  const seq=inputSeq();
+  for(let i=0;i<T;i++){
+    const s=seq[i];
+    const label = i===T-1 ? 't(当前)' : 't-'+(T-1-i);
+    html+=`<tr><td>${label}</td><td>${s[0].toFixed(3)}</td><td>${s[1].toFixed(3)}</td><td>${s[2].toFixed(3)}</td><td>${s[3].toFixed(3)}</td></tr>`;
+  }
+  tb.innerHTML=html;
+}
+
+function renderStep(X,u){
+  const el=document.getElementById('stepBody');
+  const layers=['Embedding(4→32)','+ 位置编码','多头自注意力(4头)','FFN(32→64→32)','输出头(32→1)'];
+  el.innerHTML=
+    `<div class="dim"># 第 ${stepCount} 步 · t = ${simTime.toFixed(2)} s · 控制器: ${useTransformer?'Transformer':'LQR'}</div>`+
+    `<div>输入序列 X ∈ ℝ<sup>${T}×4</sup>（最近 ${T} 步状态）</div>`+
+    `<div>前向: ${layers.map(l=>`<span class="dim">${l}</span>`).join(' <span class="op">→</span> ')}</div>`+
+    `<div>输出 <span class="op">u</span> = <span class="val">${u.toFixed(3)} N</span>（施加到小车）</div>`;
+}
+
+// ---------- 注意力热力图 ----------
+const attnCv=document.getElementById('attnCanvas');
+const actx=attnCv.getContext('2d');
+function drawAttention(attn){
+  const Wd=attnCv.width, Hd=attnCv.height;
+  actx.clearRect(0,0,Wd,Hd);
+  const h=attn.length, Tlen=attn[0].length;
+  const gridW=180, gridH=80;
+  const cell=gridW/Tlen;
+  const gapX=30, gapY=16;
+  const ox0=20, oy0=18;
+  for(let hi=0;hi<h;hi++){
+    const ox=ox0+(hi%2)*(gridW+gapX);
+    const oy=oy0+Math.floor(hi/2)*(gridH+gapY);
+    for(let q=0;q<Tlen;q++)for(let k=0;k<Tlen;k++){
+      const a=attn[hi][q][k];
+      actx.fillStyle=`rgba(46,230,168,${(a*0.95).toFixed(3)})`;
+      actx.fillRect(ox+k*cell, oy+q*cell, cell-1, cell-1);
+    }
+    actx.strokeStyle='#2ee6a8'; actx.strokeRect(ox,oy,gridW,gridH);
+    // 高亮最后一行
+    actx.strokeStyle='#ff5d6c'; actx.lineWidth=2;
+    actx.strokeRect(ox, oy+(Tlen-1)*cell, gridW, cell);
+    actx.lineWidth=1;
+    actx.fillStyle='#6d8199'; actx.font='11px JetBrains Mono';
+    actx.fillText('头 '+(hi+1), ox, oy-5);
+  }
+  // 图注：最后一行 = 当前决策关注
+  actx.fillStyle='#ff5d6c'; actx.font='11px JetBrains Mono';
+  actx.fillText('红框行 = 当前决策（query=t）对各历史步（key）的关注', ox0, Hd-6);
+}
+
+// ---------- 动画 ----------
+const canvas=document.getElementById('simCanvas');
+const ctx=canvas.getContext('2d');
+const Wc=canvas.width,Hc=canvas.height;
+const GROUND_Y=285,PX_PER_M=130,CART_W=62,CART_H=26,POLE_LEN_PX=150;
+function render(){
+  ctx.clearRect(0,0,Wc,Hc);
+  const cx=Wc/2;
+  ctx.save();ctx.strokeStyle='rgba(183,139,255,0.18)';ctx.setLineDash([4,5]);ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(cx,GROUND_Y);ctx.lineTo(cx,GROUND_Y-POLE_LEN_PX-30);ctx.stroke();ctx.restore();
+  ctx.strokeStyle='#b78bff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,GROUND_Y);ctx.lineTo(Wc,GROUND_Y);ctx.stroke();
+  ctx.fillStyle='rgba(109,129,153,0.7)';ctx.font='10px JetBrains Mono';ctx.textAlign='center';
+  for(let i=-4;i<=4;i++){const px=cx+i*PX_PER_M;if(px<20||px>Wc-20)continue;ctx.fillRect(px,GROUND_Y,1,5);ctx.fillText(i+'m',px,GROUND_Y+16);}
+  const cartX=cx+z[0]*PX_PER_M, pivotY=GROUND_Y-CART_H/2;
+  const th=z[2];
+  const tipX=cartX+POLE_LEN_PX*Math.sin(th), tipY=pivotY-POLE_LEN_PX*Math.cos(th);
+  // 力箭头
+  const u=lastU;
+  if(Math.abs(u)>0.01){ctx.save();ctx.strokeStyle='#ffb454';ctx.fillStyle='#ffb454';ctx.lineWidth=3;
+    const fx=cartX+Math.sign(u)*(CART_W/2+4), flen=Math.min(Math.abs(u)*60,90);
+    ctx.beginPath();ctx.moveTo(fx,pivotY);ctx.lineTo(fx+Math.sign(u)*flen,pivotY);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(fx+Math.sign(u)*(flen+8),pivotY);ctx.lineTo(fx+Math.sign(u)*flen,pivotY-5);ctx.lineTo(fx+Math.sign(u)*flen,pivotY+5);ctx.closePath();ctx.fill();ctx.restore();}
+  ctx.save();ctx.strokeStyle='#2ee6a8';ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(cartX,pivotY);ctx.lineTo(tipX,tipY);ctx.stroke();ctx.restore();
+  ctx.fillStyle='#ffb454';ctx.beginPath();ctx.arc(cartX,pivotY,5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#2ee6a8';ctx.beginPath();ctx.arc(tipX,tipY,5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#162130';ctx.strokeStyle='#57a8ff';ctx.lineWidth=2;ctx.beginPath();ctx.rect(cartX-CART_W/2,GROUND_Y-CART_H,CART_W,CART_H);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#57a8ff';ctx.beginPath();ctx.arc(cartX-CART_W/4,GROUND_Y+4,6,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(cartX+CART_W/4,GROUND_Y+4,6,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#ffb454';ctx.font='bold 12px JetBrains Mono';ctx.textAlign='left';
+  ctx.fillText('θ = '+(th*180/Math.PI).toFixed(1)+'°', tipX+10, tipY+6);
+}
+
+// ---------- 主循环 ----------
+let lastT=performance.now(),acc=0;
+function frame(now){
+  const realDt=Math.min((now-lastT)/1000,0.1);lastT=now;
+  if(running&&!failed){
+    acc+=realDt*speed;
+    let guard=0;
+    while(acc>=dt&&!failed&&guard<1000){step();acc-=dt;guard++;}
+    if(guard>=1000)acc=0;
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+
+// ---------- 复位 ----------
+function reset(){
+  z=[0,0,parseFloat(document.getElementById('th0').value),0];
+  failed=false;stepCount=0;simTime=0;acc=0;
+  resetBuf();lastU=0;lastAttn=null;
+  renderReads(0);renderSeq();
+  document.getElementById('stepBody').innerHTML='等待仿真…';
+  document.getElementById('btnRun').textContent='暂停';
+  running=true;
+}
+
+// ---------- UI 绑定 ----------
+document.getElementById('btnRun').addEventListener('click',function(){if(failed)reset();else{running=!running;this.textContent=running?'暂停':'运行';}});
+document.getElementById('btnStep').addEventListener('click',function(){if(failed)return;running=false;document.getElementById('btnRun').textContent='运行';step();});
+document.getElementById('btnReset').addEventListener('click',reset);
+document.getElementById('btnPerturb').addEventListener('click',function(){if(failed)return;z[3]+=parseFloat(document.getElementById('pert').value);});
+document.getElementById('speed').addEventListener('input',function(){speed=parseInt(this.value);document.getElementById('vSpeed').textContent=speed+'×';});
+document.getElementById('th0').addEventListener('input',function(){document.getElementById('vTh0').textContent=this.value+' rad';});
+document.getElementById('pert').addEventListener('input',function(){document.getElementById('vPert').textContent=this.value+' rad/s';});
+document.getElementById('btnCtrlT').addEventListener('click',function(){useTransformer=true;this.classList.add('active');document.getElementById('btnCtrlL').classList.remove('active');document.getElementById('vCtrl').textContent='Transformer';});
+document.getElementById('btnCtrlL').addEventListener('click',function(){useTransformer=false;this.classList.add('active');document.getElementById('btnCtrlT').classList.remove('active');document.getElementById('vCtrl').textContent='LQR';});
+document.getElementById('ctrl').addEventListener('input',function(){if(this.value==='0')document.getElementById('btnCtrlT').click();else document.getElementById('btnCtrlL').click();});
+
+document.querySelectorAll('.tab').forEach(tab=>{tab.addEventListener('click',function(){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-body').forEach(b=>b.classList.remove('active'));this.classList.add('active');document.getElementById('tab-'+this.dataset.tab).classList.add('active');});});
+
+// ---------- 启动 ----------
+let speed=1;
+reset();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
